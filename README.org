@@ -1,0 +1,31 @@
+#+STARTUP: inlineimages
+#+OPTIONS: toc:3 ^:nil
+
+** ERC History
+
+This package enhances Emacs's IRC client =ERC= by enabling it to retrieve chat history from channels. Note that chat logs must be archived and accessible online (currently, this package only supports HTTP access).
+
+** Configuration
+
+The primary configuration required is setting the variable =erc-history-sources=, which is a list of sources (HTTP links) and the channels they offer logs for.
+
+The link can include wildcards that will be replaced when pulling chat logs:
+- =#CHANNEL#=: The name of the currently viewed channel.
+- =TIME=: Replaces all available time formats using Emacs Lisp's =format-time-string= function.
+
+#+begin_src elisp
+  (require 'erc-history)
+  (setq erc-history-sources
+    '(("http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
+  ("#erc-history" "#erc-history-1"))))
+#+end_src
+
+
+The configured channels' logs will automatically be retrieved when you navigate to the beginning of their buffers.
+
+
+** Preview
+
+#+ATTR_ORG: :width 800
+[[./preview.gif]]
+
