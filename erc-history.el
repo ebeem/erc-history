@@ -126,7 +126,8 @@ MSG must match the format described for erc messages."
                                (set-marker erc-insert-marker (point-min))
                                (erc-display-line
                                 (concat "<" nickname "> " content)
-                                (erc-get-buffer channel)))))))))
+                                (erc-get-buffer channel))
+                               (set-marker erc-insert-marker (point-max)))))))))
 
 (defun with-current-time (time body)
   "Execute BODY with the current time temporarily set to TIME."
@@ -156,7 +157,8 @@ MSG must match the format described for erc messages."
                         (lambda ()
                           (with-current-buffer channel
                             (set-marker erc-insert-marker (point-min))
-                            (erc-display-line "" (erc-get-buffer channel)))))
+                            (erc-display-line "" (erc-get-buffer channel))
+                            (set-marker erc-insert-marker (point-max)))))
     (erc-history-decrement-date))))
 
 (defun erc-history--check-point-at-top-of-buffer ()

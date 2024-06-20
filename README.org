@@ -23,6 +23,21 @@ The link can include wildcards that will be replaced when pulling chat logs:
 
 The configured channels' logs will automatically be retrieved when you navigate to the beginning of their buffers.
 
+Note: Make sure you enable =erc-history-mode=.
+
+*** Elpaca Configuration
+In case you use a flexible package manager, you can just link this repo.
+
+#+begin_src elisp
+(use-package erc-history
+  :after erc
+  :elpaca (:host github :repo "ebeem/erc-history")
+  :hook (erc-mode . erc-history-mode)
+  :init
+  (setq erc-history-sources
+    '(("http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
+  ("#erc-history" "#erc-history-1")))))
+#+end_src
 
 ** Preview
 
