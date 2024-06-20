@@ -173,7 +173,6 @@ displays an error message if STATUS is error."
       (message "Error retrieving URL: %s" (plist-get status :error))
     (goto-char (point-min))
     (search-forward-regexp "\n\n" (point-max) t)
-    (forward-line 1)
     (let ((min-http-point (point)))
       (goto-char (point-max))
       (while (> (point) min-http-point)
