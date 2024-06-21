@@ -17,7 +17,34 @@ The link can include wildcards that will be replaced when pulling chat logs:
   (require 'erc-history)
   (setq erc-history-sources
     '(("http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
-  ("#erc-history" "#erc-history-1"))))
+      ("#erc-history" "#erc-history-1"))))
+#+end_src
+
+Most of the time, the available logs will need to be parsed. In such cases, you can provide a parser function for each source. If no parser function is provided, a default one will be used, though it may not work properly.
+
+The 3rd element in the source list is the function that parses log messages. The =parser= will receive a line from the chat logs and is expected to return a list of three variables: (=MSG_TIME= =SENDER_NICK= =MSG_CONTENT=). Ensure that the time format is in Emacs Lisp's time format. Use =encode-time= when needed, and convert the =timezone= as necessary. The default parser is =erc-history-common-message-parser=.
+
+#+begin_src elisp
+  (defun erc-history-myhost-message-parser (msg)
+    "Display MSG in its erc bubber named CHANNEL.
+  MSG must match the format described for erc messages."
+    (message "custom message parsing: %s" msg)
+    (let ((msg-parts (string-split msg " ")))
+      ;; time
+      (list
+      (encode-time (parse-time-string
+                    (concat (string-replace
+                              " " "T" (substring msg 0 19)) "+0000")))
+      ;; nickname
+      (substring (nth 3 msg-parts) 0
+                  (- (length (nth 3 msg-parts)) 1))
+      ;; message content
+      (mapconcat 'identity (cl-subseq msg-parts 4) " "))))
+
+  (setq erc-history-sources
+      '(("http://myhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
+          ("#systemcrafters" "#erc-history")
+          erc-history-myhost-message-parser)))
 #+end_src
 
 
@@ -36,7 +63,7 @@ In case you use a flexible package manager, you can just link this repo.
   :init
   (setq erc-history-sources
     '(("http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
-  ("#erc-history" "#erc-history-1")))))
+      ("#erc-history" "#erc-history-1")))))
 #+end_src
 
 ** Preview

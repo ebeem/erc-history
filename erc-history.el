@@ -31,10 +31,14 @@
 (require 'url)
 (require 'cl-lib)
 
-(defvar erc-history-sources
-  '(("http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
-     ("#erc-history" "#erc-history-1")))
-  "Lists of sources to pull history from and the channels they provide.")
+(defvar erc-history-sources '()
+  "Lists of sources to pull history from and the channels they provide.
+Example:
+'((\"http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt\"
+     (\"#erc-history\" \"#erc-history-1\")
+	 'my-parse-function))
+
+Note: erc-history-add-source should be used to add new sources.")
 
 (defvar erc-history-pull-on-reaching-top t
   "Whether to automatically pull messages logs upon reaching top of a buffer.")
@@ -47,7 +51,10 @@
   "Last date pulled into the current buffer.")
 
 (defvar-local erc-history--source-available nil
-  "Whether a source if available for this channel.")
+  "The url of the chat logs for this channel.")
+
+(defvar-local erc-history--parser-available nil
+  "The parser of the chat logs for this channel.")
 
 ;;;###autoload(autoload 'erc-history-mode "erc-history" nil t)
 (define-erc-module history history
@@ -59,6 +66,9 @@
   "Init the erc-history module locally.
 It will ensure that the current buffer is defined in the sources list."
   (setq erc-history--source-available (erc-history--get-channel-url))
+  (setq erc-history--parser-available
+        (or (erc-history--get-channel-parser)
+            'erc-history-common-message-parser))
   (when (and erc-history-pull-on-reaching-top
              erc-history--source-available)
     (add-hook 'post-command-hook 'erc-history--check-point-at-top-of-buffer nil t)))
@@ -69,6 +79,21 @@ It will ensure that the current buffer is defined in the sources list."
 It will ensure that the current buffer is defined in the sources list."
   (remove-hook 'post-command-hook 'erc-history--check-point-at-top-of-buffer t))
 
+(defun erc-history-add-source (url channels &optional parser)
+  "Add a source to the available sources that can be pulled.
+URL is the url of the host, it will be formatted according to `format-time-string'.
+You can also have some tags that will be replaced like #CHANNEL# which should be
+used in case the source hosts multiple channels.
+CHANNELS is the list of channel in the host.
+PARSER (optional) is the function that parses log messages, the parser will receive
+a line from the chat logs and is expected to return a list of 3 variables
+'(MSG_TIME SENDER_NICK MSG_CONTENT). Ensure that the time format is elisp's time.
+Use encode-time when needed, and ensure you convert the timezone as needed.
+the default parser is `erc-history-common-message-parser'."
+  (setq erc-history-sources
+        (cons erc-history-sources
+              (url channels (or parser erc-history-common-message-parser)))))
+
 (defun erc-history--get-channel-url (&optional channel)
   "Return the base url of the host that archives the irc logs for CHANNEL."
   (cl-loop for source in erc-history-sources
@@ -76,6 +101,14 @@ It will ensure that the current buffer is defined in the sources list."
                             (buffer-name (current-buffer)))
                         (nth 1 source))
            return (car source)))
+
+(defun erc-history--get-channel-parser (&optional channel)
+  "Return the parser of the host that archives the irc logs for CHANNEL."
+  (cl-loop for source in erc-history-sources
+           when (member (or channel
+                            (buffer-name (current-buffer)))
+                        (nth 1 source))
+           return (nth 2 source)))
 
 (defun erc-history--get-target-chat-url (&optional url date channel)
   "Return a crafted url of the target chat log after replacing all placeholders.
@@ -96,40 +129,39 @@ pull next."
         (time-subtract erc-history-last-pulled-date (days-to-time (or days 1))))
   erc-history-last-pulled-date)
 
-(message "%s" (decode-time
-               (current-time)))
-
-(message "%s" (parse-time-string (concat (substring "2024-06-10T08:00:01 -" 0 19) "+0000")))
-(message "%s" (decode-time
-               (encode-time (parse-time-string (substring "2024-06-10 08:00:01 -" 0 19)))))
-
-(message "%s" (time-add (parse-time-string (substring "2024-06-10 08:00:01 -" 0 19))
-                        erc-history-time-offset))
+(defun erc-history-common-message-parser (msg)
+  "Display MSG in its erc bubber named CHANNEL.
+MSG must match the format described for erc messages."
+  (let ((msg-parts (string-split msg " ")))
+    ;; time
+    (list
+     (encode-time (parse-time-string
+                   (concat (string-replace
+                            " " "T" (substring msg 0 19)) "+0000")))
+    ;; nickname
+     (substring (nth 3 msg-parts) 0
+                (- (length (nth 3 msg-parts)) 1))
+     ;; message content
+     (mapconcat 'identity (cl-subseq msg-parts 4) " "))))
 
 (defun erc-history-display-line (channel msg)
   "Display MSG in its erc bubber named CHANNEL.
 MSG must match the format described for erc messages."
-  ;; TODO: include parsing function in source configs
-  (let ((msg-parts (string-split msg " ")))
-    (when (> (length msg-parts) 3)
-      (let ((nickname (substring (nth 3 msg-parts) 0
-                                 (- (length (nth 3 msg-parts)) 1)))
-            (content (mapconcat 'identity (cl-subseq msg-parts 4) " "))
-            (time (encode-time (parse-time-string
-                                (concat
-                                 (string-replace " " "T" (substring msg 0 19))
-                                 ;; TODO: include time zone parameter in source configs
-                                 "+0000")))))
-        (with-current-time time
-                           (lambda ()
-                             (with-current-buffer channel
-                               (set-marker erc-insert-marker (point-min))
-                               (erc-display-line
-                                (concat "<" nickname "> " content)
-                                (erc-get-buffer channel))
-                               (set-marker erc-insert-marker
-                                        (or (next-single-property-change (point) 'erc-prompt)
-                                            (point-max))))))))))
+  (when (> (length msg) 20)
+    (let* ((msg-parts (funcall erc-history--parser-available msg))
+           (time (nth 0 msg-parts))
+           (nickname (nth 1 msg-parts))
+           (content (nth 2 msg-parts)))
+      (with-current-time
+       time
+       (lambda ()
+         (with-current-buffer channel
+           (set-marker erc-insert-marker (point-min))
+           (erc-display-line (concat "<" nickname "> " content)
+                             (erc-get-buffer channel))
+           (set-marker erc-insert-marker
+                       (or (next-single-property-change (point) 'erc-prompt)
+                           (point-max)))))))))
 
 (defun with-current-time (time body)
   "Execute BODY with the current time temporarily set to TIME."
@@ -143,10 +175,6 @@ MSG must match the format described for erc messages."
   "Load previous history of CHANNEL."
   (interactive "e")
   (let ((channel (or channel (buffer-name (current-buffer)))))
-    (message "loading history of %s at %s from: %s" channel
-             (format-time-string "%Y-%m-%d" erc-history-last-pulled-date)
-             (erc-history--get-target-chat-url))
-    
     (url-retrieve (erc-history--get-target-chat-url)
                   (lambda (status)
                     (erc-history--url-callback status channel)))
@@ -183,38 +211,12 @@ displays an error message if STATUS is error."
         (forward-line -1)
         (when (> (- (line-end-position)
                     (line-beginning-position) 0))
-          (erc-history-display-line channel (buffer-substring-no-properties
-                                            (line-beginning-position)
-                                            (line-end-position)))))))
+          (let ((msg (buffer-substring-no-properties
+                          (line-beginning-position)
+                          (line-end-position))))
+           (with-current-buffer channel
+            (erc-history-display-line channel msg)))))))
   (kill-buffer (current-buffer)))
-
-;; TODO: create a function that helps at getting the marker to the correct
-;; line based on timestamp
-
-;; (defun get-min-max-stamps ()
-;;   (let ((stamp-min nil)
-;;         (stamp-max nil))
-;;     (save-excursion
-;;       (goto-char (point-min))
-;;       (let (words)
-;;         (while (not (eobp))
-;;           ;; (message "%s" (text-properties-at (point)))
-;;           (let ((stamp (get-text-property (point) 'invisible))
-;;                 (stamp-fun (car (get-text-property (point) 'cursor-sensor-functions)))
-;;                 (and (equal stamp 'timestamp) (decode-time (aref (aref stamp-fun 2) 0))))
-;;             (when (equal stamp 'timestamp)
-;;               (when (or stamp-min) (setq stamp-min stamp)))
-;;           (forward-word))))))
-;; (with-current-buffer "#erc-history"
-;;   (goto-char (point-min))
-;;   (let (words)
-;;     (while (not (eobp))
-;;       ;; (message "%s" (text-properties-at (point)))
-;;       (let ((stamp (get-text-property (point) 'invisible))
-;;             (stamp-fun (car (get-text-property (point) 'cursor-sensor-functions))))
-;;         (when (equal stamp 'timestamp)
-;;           (message "stamp found! %s" (decode-time (aref (aref stamp-fun 2) 0)))))
-;;       (forward-word))))
 
 (provide 'erc-history)
 ;;; erc-history.el ends here
