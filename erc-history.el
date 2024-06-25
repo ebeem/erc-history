@@ -56,7 +56,7 @@ Note: erc-history-add-source should be used to add new sources.")
 (defvar-local erc-history--parser-available nil
   "The parser of the chat logs for this channel.")
 
-(defvar-local mutex (make-mutex)
+(defvar-local erc-history-mutex (make-mutex)
   "Mutex variable to safely pull logs.")
 
 ;;;###autoload(autoload 'erc-history-mode "erc-history" nil t)
@@ -158,7 +158,7 @@ MSG must match the format described for erc messages."
               (time (nth 0 msg-parts))
               (nickname (nth 1 msg-parts))
               (content (nth 2 msg-parts)))
-          (with-current-time
+          (erc-history-with-current-time
            time
            (lambda ()
              (with-current-buffer channel
@@ -169,20 +169,20 @@ MSG must match the format described for erc messages."
                            (or (next-single-property-change (point) 'erc-prompt)
                                (point-max)))))))))))
 
-(defun with-current-time (time body)
+(defmacro erc-history-with-current-time (time &rest body)
   "Execute BODY with the current time temporarily set to TIME."
-  (let ((orig-current-time (symbol-function 'current-time)))
-    (cl-letf (((symbol-function 'current-time) (lambda () time)))
-      (unwind-protect
-          (funcall body)
-        (fset 'current-time orig-current-time)))))
+  `(let ((orig-current-time (symbol-function 'current-time)))
+     (cl-letf (((symbol-function 'current-time) (lambda () ,time)))
+       (unwind-protect
+           (progn ,@body)
+         (fset 'current-time orig-current-time)))))
 
 (defun erc-history-pull-previous (&optional channel)
   "Load previous history of CHANNEL."
   (let ((channel (or channel (buffer-name (current-buffer)))))
     (url-retrieve (erc-history--get-target-chat-url)
                   (lambda (status)
-                    (erc-history--url-callback status channel mutex)))))
+                    (erc-history--url-callback status channel erc-history-mutex)))))
 
 (defun erc-history-pull ()
   "Load previous history of CHANNEL."
@@ -191,7 +191,7 @@ MSG must match the format described for erc messages."
 
 (defun erc-history--check-point-at-top-of-buffer ()
   "Call pull history if point reached top."
-  (when (bobp)
+  (when (and (bobp) (not erc-history-mutex))
     (erc-history-pull-previous)))
 
 (defun erc-history--url-callback (status channel mutex)
