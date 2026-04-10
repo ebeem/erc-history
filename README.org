@@ -96,18 +96,51 @@ The configured channels' logs will automatically be retrieved when you navigate 
 
 Note: Make sure you enable =erc-history-mode=.
 
-*** Elpaca Configuration
-In case you use a flexible package manager, you can just link this repo.
+*** use-package Configuration
+For modern ~emacs~, you can use ~use-package~ to install and configure ~erc-history~ quickly. It's highly recommended to start this package with the snippet below, it will immediately allow you to use any of the channels in ~erc-history-sources~. You can start by joining ~ubuntu-desktop~ for example and start scrolling upward via mouse or keybindings and you will see previous messages getting pulled.
 
 #+begin_src elisp
-(use-package erc-history
-  :after erc
-  :ensure (:host github :repo "ebeem/erc-history")
-  :hook (erc-mode . erc-history-mode)
-  :init
-  (setq erc-history-sources
-    '(("http://localhost/grc-history/#CHANNEL#/%Y/%m/%d.txt"
-      ("#erc-history" "#erc-history-1")))))
+  (use-package erc-history
+    :after erc
+    :ensure t
+    :vc (:url "https://github.com/ebeem/erc-history")
+    :hook (erc-mode . erc-history-mode)
+    :init
+    (defun erc-history-ubuntu-message-parser (msg)
+    "Parse a chat log MSG and return a list of (time nickname message).
+  example: [23:22] <Bashing-om> UWN: Opening 842 for Saturday."
+    (let ((regex "\\[\\([0-9:]+\\)\\] <\\([^>]+\\)> \\(.*\\)"))
+      (when (string-match regex msg)
+        (let* ((time (match-string 1 msg))
+              (nick (match-string 2 msg))
+              (content (match-string 3 msg))
+              (full-date (format-time-string
+                          (concat "%Y-%m-%dT" time ":00+0000")
+                          erc-history-last-pulled-date)))
+          (list (encode-time (parse-time-string full-date))
+                nick
+                content)))))
+
+    (setq erc-history-sources
+          ;; my personal logs
+          '(;; ubuntu logs
+            ("https://irclogs.ubuntu.com/%Y/%m/%d/#CHANNEL#.txt"
+             ("#cloud-init" "#kubuntu-devel" "#kubuntu"
+              "#launchpad-dev" "#launchpad" "#lubuntu-devel"
+              "#lubuntu" "#maas" "#mir-server" "#netplan"
+              "#snappy" "#ubports" "#ubuntu-au" "#ubuntu-bd"
+              "#ubuntu-bugs" "#ubuntu-community-team" "#ubuntu-de"
+              "#ubuntu-desktop" "#ubuntu-devel" "#ubuntu-discuss"
+              "#ubuntu-doc" "#ubuntu-es" "#ubuntu-hr" "#ubuntu-ir"
+              "#ubuntu-irc" "#ubuntu-it" "#ubuntu-kernel" "#ubuntu-kr"
+              "#ubuntu-lt" "#ubuntu-mate" "#ubuntu-meeting" "#ubuntu-mirrors"
+              "#ubuntu-news" "#ubuntu-next" "#ubuntu-nl" "#ubuntu-on-air"
+              "#ubuntu-ops" "#ubuntu-pl" "#ubuntu-qt" "#ubuntu-quality"
+              "#ubuntu-release" "#ubuntu-ru" "#ubuntu-sa" "#ubuntu-security"
+              "#ubuntu-server" "#ubuntu-tw" "#ubuntu-uk" "#ubuntu-us-mi"
+              "#ubuntu-us-oh" "#ubuntu-us-pa" "#ubuntu" "#ubuntustudio-devel"
+              "#ubuntustudio" "#xubuntu-devel" "#xubuntu")
+             erc-history-ubuntu-message-parser))))
 #+end_src
 
 ** Preview
